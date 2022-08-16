@@ -3,7 +3,343 @@ Parameters:
   # but using them will make your cloudformation templates more reusable
   # use them for things that may change over time, such as instance type,
   # VPCs and so on.
+  EnvironmentName:
+    Description: Environment Name to distinct the stack
+    Type: String
+
+  AMItoUse:
+    Description: Chosen AMI id for required task
+    Type: String
+
+  KeytoUse:
+    Description: Key pair to use
+    Type: String
+
 Resources:
+  MyS3Bucket:
+    Type: 'AWS::S3::Bucket'
+    DeletionPolicy: Delete
+    Properties:
+      BucketName: !Sub my-${AWS::AccountId}-bucket
+  # VPC and Internet Gateway with attachment
+  Vpc1:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: 10.0.0.0/16
+      Tags:
+      - Key: Name
+        Value: !Sub "${EnvironmentName} Main VPC"
+  IGW1:
+    Type: AWS::EC2::InternetGateway
+  AttachIGW1:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties:
+      VpcId: !Ref Vpc1
+      InternetGatewayId: !Ref IGW1
+  # ******** Subnets ******** #
+  PubSub1:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref Vpc1
+      AvailabilityZone:
+        Fn::Select:
+        - 0
+        - Fn::GetAZs: !Ref 'AWS::Region'
+      CidrBlock: 10.0.1.0/24
+      MapPublicIpOnLaunch: true
+      Tags:
+      - Key: Name
+        Value: !Sub "${EnvironmentName} Public Subnet-1 Availability Zone1"
+  PriSub1:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref Vpc1
+      AvailabilityZone:
+        Fn::Select:
+        - 0
+        - Fn::GetAZs: !Ref 'AWS::Region'
+      CidrBlock: 10.0.2.0/24
+      MapPublicIpOnLaunch: false
+      Tags:
+      - Key: Name
+        Value: !Sub "${EnvironmentName} Private Subnet-1 Availability Zone1"
+  # ******** Subnets of AZ-2 ******** #
+  PubSub2:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref Vpc1
+      AvailabilityZone:
+        Fn::Select:
+        - 1
+        - Fn::GetAZs: !Ref 'AWS::Region'
+      CidrBlock: 10.0.3.0/24
+      MapPublicIpOnLaunch: true
+      Tags:
+      - Key: Name
+        Value: !Sub "${EnvironmentName} Public Subnet-2 Availability Zone2"
+  PriSub2:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref Vpc1
+      AvailabilityZone:
+        Fn::Select:
+        - 1
+        - Fn::GetAZs: !Ref 'AWS::Region'
+      CidrBlock: 10.0.4.0/24
+      MapPublicIpOnLaunch: false
+      Tags:
+      - Key: Name
+        Value: !Sub "${EnvironmentName} Private Subnet-2 Availability Zone2"
+
+  # ********* EIP and NATs ******** #
+  EIP1:
+    Type: AWS::EC2::EIP
+    DependsOn: AttachIGW1
+    Properties:
+      Tags:
+      - Key: Name
+        Value: !Sub "${EnvironmentName} EIP-1 for our NAT-1"
+  NAT1:
+    Type: AWS::EC2::NatGateway
+    Properties:
+      AllocationId: !GetAtt EIP1.AllocationId
+      SubnetId: !Ref PubSub1
+      Tags:
+      - Key: Name
+        Value: !Sub "${EnvironmentName} NAT-1 Gateway"
+  EIP2:
+    Type: AWS::EC2::EIP
+    DependsOn: AttachIGW1
+    Properties:
+      Tags:
+      - Key: Name
+        Value: !Sub "${EnvironmentName} EIP-2 for our NAT-2"
+  NAT2:
+    Type: AWS::EC2::NatGateway
+    Properties:
+      AllocationId: !GetAtt EIP2.AllocationId
+      SubnetId: !Ref PubSub2
+      Tags:
+      - Key: Name
+        Value: !Sub "${EnvironmentName} NAT-2 Gateway"
+
+  # ******** Route Tables ******** #
+  PrivateRouteTable1:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      Tags:
+      - Key: Name
+        Value: !Sub "${EnvironmentName} Private Route Table-1"
+      VpcId: !Ref Vpc1
+  PublicRouteTable1:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      Tags:
+      - Key: Name
+        Value: !Sub "${EnvironmentName} Public Route Table-1"
+      VpcId: !Ref Vpc1
+  PrivateRouteTable2:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      Tags:
+      - Key: Name
+        Value: !Sub "${EnvironmentName} Private Route Table-2"
+      VpcId: !Ref Vpc1
+  PublicRouteTable2:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      Tags:
+      - Key: Name
+        Value: !Sub "${EnvironmentName} Public Route Table-2"
+      VpcId: !Ref Vpc1
+  # ******** Route Table Association ******** #
+  AssociatePUBRT1:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      RouteTableId: !Ref PublicRouteTable1
+      SubnetId: !Ref PubSub1
+  AssociatePRIRT1:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      RouteTableId: !Ref PrivateRouteTable1
+      SubnetId: !Ref PriSub1
+
+  AssociatePUBRT2:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      RouteTableId: !Ref PublicRouteTable2
+      SubnetId: !Ref PubSub2
+  AssociatePRIRT2:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      RouteTableId: !Ref PrivateRouteTable2
+      SubnetId: !Ref PriSub2
+  # ******** Routes ******** #
+  InternetRoute1:
+    Type: AWS::EC2::Route
+    Properties:
+      RouteTableId: !Ref PublicRouteTable1
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref IGW1
+  PrivateInternetOutBoundRoute1:
+    Type: AWS::EC2::Route
+    Properties:
+      RouteTableId: !Ref PrivateRouteTable1
+      DestinationCidrBlock: 0.0.0.0/0
+      NatGatewayId: !Ref NAT1
+
+  InternetRoute2:
+    Type: AWS::EC2::Route
+    Properties:
+      RouteTableId: !Ref PublicRouteTable2
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref IGW1
+  PrivateInternetOutBoundRoute2:
+    Type: AWS::EC2::Route
+    Properties:
+      RouteTableId: !Ref PrivateRouteTable2
+      DestinationCidrBlock: 0.0.0.0/0
+      NatGatewayId: !Ref NAT2
+  # Infrastructure is semi-done
+  UdagramSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Allow http to our test scalable groups
+      VpcId:
+        Ref: Vpc1
+      SecurityGroupIngress:
+      - IpProtocol: tcp
+        FromPort: 80
+        ToPort: 80
+        CidrIp: 0.0.0.0/0
+      SecurityGroupEgress:
+      - IpProtocol: -1
+        FromPort: -1
+        ToPort: -1
+        CidrIp: 0.0.0.0/0
+  BastionAccessSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Allow SSH to our test host
+      VpcId:
+        Ref: Vpc1
+      SecurityGroupIngress:
+      - IpProtocol: tcp
+        FromPort: 22
+        ToPort: 22
+        CidrIp: 0.0.0.0/0
+      SecurityGroupEgress:
+      - IpProtocol: -1
+        FromPort: -1
+        ToPort: -1
+        CidrIp: 0.0.0.0/0
+
+  # ******** Load Balancer SecGroup for HTTP ******** #
+  LBSecGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Allow http to our LB
+      VpcId:
+        Ref: Vpc1
+      SecurityGroupIngress:
+      - IpProtocol: tcp
+        FromPort: 80
+        ToPort: 80
+        CidrIp: 0.0.0.0/0
+      SecurityGroupEgress:
+      - IpProtocol: tcp
+        FromPort: 80
+        ToPort: 80
+        CidrIp: 0.0.0.0/0
+
+  # ******** Launch Config and Auto Scaling Groups ******** #
+  MyWebAppLaunchConfig:
+    Type: AWS::AutoScaling::LaunchConfiguration
+    Properties:
+      UserData:
+        Fn::Base64: !Sub |
+          #!/bin/bash
+          apt-get update -y
+          apt-get install apache2 -y
+          systemctl start apache2.service
+          cd /var/www/html
+          echo "Udacity Demo Web Server Up and Running!"> index.html
+          curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip"
+          sudo apt install unzip
+          sudo unzip awscliv2.zip
+          sudo ./aws/install
+          cd /var/www/html/
+          sudo aws s3 sync s3://my-${AWS::AccountId}-bucket /var/www/html
+      ImageId: !Ref AMItoUse
+      IamInstanceProfile: !Ref ProfileWithRolesForOurApp
+      SecurityGroups:
+      - Ref: UdagramSecurityGroup
+      InstanceType: t3.medium
+      BlockDeviceMappings:
+      - DeviceName: "/dev/sdk"
+        Ebs:
+          VolumeSize: '10'
+
+  MyWebAppTargetGroup:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      HealthCheckIntervalSeconds: 10
+      HealthCheckPath: /
+      HealthCheckProtocol: HTTP
+      HealthCheckTimeoutSeconds: 8
+      HealthyThresholdCount: 2
+      Port: 80
+      Protocol: HTTP
+      UnhealthyThresholdCount: 5
+      VpcId: !Ref Vpc1
+
+  MyWebAppAutoScalingGroup:
+    Type: AWS::AutoScaling::AutoScalingGroup
+    Properties:
+      VPCZoneIdentifier:
+      - !Ref PriSub1
+      - !Ref PriSub2
+      LaunchConfigurationName: !Ref MyWebAppLaunchConfig
+      MaxSize: '4'
+      MinSize: '0'
+      DesiredCapacity: '2'
+      TargetGroupARNs:
+      - Ref: MyWebAppTargetGroup
+  # ******** Load Balancers, Listeners and Listener rules ******** #
+  MyWebAppLB:
+    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+    Properties:
+      Subnets:
+      - !Ref PubSub1
+      - !Ref PubSub2
+      SecurityGroups:
+      - Ref: LBSecGroup
+
+  Listener:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      DefaultActions:
+      - Type: forward
+        TargetGroupArn:
+          Ref: MyWebAppTargetGroup
+      LoadBalancerArn:
+        Ref: MyWebAppLB
+      Port: '80'
+      Protocol: HTTP
+
+  ALBListenerRule:
+    Type: AWS::ElasticLoadBalancingV2::ListenerRule
+    Properties:
+      Actions:
+      - Type: forward
+        TargetGroupArn: !Ref 'MyWebAppTargetGroup'
+      Conditions:
+      - Field: path-pattern
+        Values: [/]
+      ListenerArn: !Ref 'Listener'
+      Priority: 1
+
+
   # instace profile contains the IAM Role name(s) that we want to associate to our auto scaling EC2 Servers
   # never give too much permissions to your EC2 instances! if they get hacked, the permissions get hacked also!
   # in this example, I create a Role called UdacityS3ReadOnlyC2 and just give it a policy of S3 Read-Only Access
@@ -11,8 +347,59 @@ Resources:
     Type: AWS::IAM::InstanceProfile
     Properties: 
       Roles:
-        - UdacityS3ReadOnlyEC2
-Outputs: 
+        - !Ref UdacityS3ReadOnlyEC2
+  UdacityS3ReadOnlyEC2:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: udacity-project-scalable-s3-access
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          -
+            Effect: Allow
+            Principal:
+              Service:
+                - ec2.amazonaws.com
+            Action:
+              - sts:AssumeRole
+      Path: /
+  EC2InstanceS3Policy:
+    Type: AWS::IAM::Policy
+    Properties:
+      PolicyName: DemoS3Policy
+      PolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          -
+            Effect: Allow
+            Action:
+              - s3:ListBucket
+              - s3:GetObject
+              - s3:GetObjectVersion
+            Resource:
+            - !Sub arn:aws:s3:::${MyS3Bucket}
+            - !Sub arn:aws:s3:::${MyS3Bucket}/*
+      Roles:
+        - !Ref UdacityS3ReadOnlyEC2
+  BastionHost: 
+    Type: AWS::EC2::Instance
+    Properties:
+      InstanceType: t3.micro
+      ImageId: !Ref AMItoUse
+      NetworkInterfaces: 
+        - AssociatePublicIpAddress: "true"
+          DeviceIndex: "0"
+          GroupSet: 
+            - Ref: "BastionAccessSecurityGroup"
+          SubnetId: 
+            Ref: "PubSub1"
+      KeyName: Bastion
+
+Outputs:
+  LoadBalancerUrl:
+    Description: The URL of the ALB
+    Value: !Join [ "", [ "http://", !GetAtt MyWebAppLB.DNSName] ]
+
   # This is also optional.
   # Bonus points for useful outputs!
   # for example, if you create a Load Balancer
