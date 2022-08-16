@@ -19,4 +19,4 @@ Shell script to deploy/update stack, shell script is used
 ``` ./update [stack-name] [body-name.yml] [parameters-file-name.json] [profile-name]```
 
 ## Diagram
-![plot](diagram.png)
+![plot](diagram3.png)
