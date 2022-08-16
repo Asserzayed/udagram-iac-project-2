@@ -259,13 +259,14 @@ Resources:
       UserData:
         Fn::Base64: !Sub |
           #!/bin/bash
-          apt-get update -y
-          apt-get install apache2 -y
-          systemctl start apache2.service
+          sudo apt-get update -y
+          sudo apt-get install apache2 -y
+          sudo systemctl start apache2.service
           cd /var/www/html
           echo "Udacity Demo Web Server Up and Running!"> index.html
           curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip"
           sudo apt install unzip
+          sudo apt install awscli
           sudo unzip awscliv2.zip
           sudo ./aws/install
           cd /var/www/html/
