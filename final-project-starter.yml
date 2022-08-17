@@ -14,6 +14,10 @@ Parameters:
   KeytoUse:
     Description: Key pair to use
     Type: String
+  
+  CPUPolicyTargetValue:
+    Type: Number
+    Default: 30
 
 Resources:
   MyS3Bucket:
@@ -211,7 +215,11 @@ Resources:
       - IpProtocol: tcp
         FromPort: 80
         ToPort: 80
-        CidrIp: 0.0.0.0/0
+        SourceSecurityGroupId: !Ref LBSecGroup
+      - IpProtocol: tcp
+        FromPort: 22
+        ToPort: 22
+        SourceSecurityGroupId: !Ref BastionAccessSecurityGroup
       SecurityGroupEgress:
       - IpProtocol: -1
         FromPort: -1
@@ -228,11 +236,11 @@ Resources:
         FromPort: 22
         ToPort: 22
         CidrIp: 0.0.0.0/0
-      SecurityGroupEgress:
-      - IpProtocol: -1
-        FromPort: -1
-        ToPort: -1
-        CidrIp: 0.0.0.0/0
+      # SecurityGroupEgress:
+      # - IpProtocol: -1
+      #   FromPort: -1
+      #   ToPort: -1
+      #   CidrIp: 0.0.0.0/0
 
   # ******** Load Balancer SecGroup for HTTP ******** #
   LBSecGroup:
@@ -293,6 +301,16 @@ Resources:
       Protocol: HTTP
       UnhealthyThresholdCount: 5
       VpcId: !Ref Vpc1
+
+  WebServerASGCPUScalingPolicy:
+    Type: AWS::AutoScaling::ScalingPolicy
+    Properties:
+      AutoScalingGroupName: !Ref MyWebAppAutoScalingGroup
+      PolicyType: TargetTrackingScaling
+      TargetTrackingConfiguration:
+        PredefinedMetricSpecification:
+          PredefinedMetricType: ASGAverageCPUUtilization
+        TargetValue: !Ref CPUPolicyTargetValue
 
   MyWebAppAutoScalingGroup:
     Type: AWS::AutoScaling::AutoScalingGroup

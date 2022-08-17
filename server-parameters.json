@@ -10,5 +10,9 @@
 	{
         "ParameterKey": "KeytoUse",
         "ParameterValue": "Asser-EC2-2"
-    }
+    },
+	{
+		"ParameterKey": "CPUPolicyTargetValue",
+		"ParameterValue": "30"
+	}
 ]
